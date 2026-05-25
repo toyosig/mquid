@@ -15,7 +15,7 @@ export class PasswordResetToken {
   @Column({ unique: true })
   token: string;
 
-  @ManyToOne(() => User)
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
   user: User;
 
   @Column({ type: 'timestamptz' })
