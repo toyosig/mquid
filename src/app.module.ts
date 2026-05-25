@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { BlogModule } from './blog/blog.module';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -31,6 +32,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
       }),
     }),
     AuthModule,
+    BlogModule,
   ],
   controllers: [AppController],
   providers: [
