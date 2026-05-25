@@ -35,19 +35,22 @@ export class DashboardService {
   }
 
   async getChart(days: number) {
-    const result = await this.blogPostRepo.query(`
+    const result = await this.blogPostRepo.query(
+      `
       SELECT
         to_char(d::date, 'YYYY-MM-DD') AS date,
         COALESCE(COUNT(p.id), 0)::int AS posts
       FROM generate_series(
-        NOW() - INTERVAL '${days} days',
+        NOW() - INTERVAL $1,
         NOW(),
         INTERVAL '1 day'
       ) AS d
       LEFT JOIN blog_posts p ON DATE(p.created_at) = d::date
       GROUP BY d
       ORDER BY d ASC
-    `);
+      `,
+      [`${days} days`],
+    );
     return result;
   }
 
