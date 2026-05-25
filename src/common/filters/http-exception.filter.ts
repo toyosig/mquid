@@ -22,7 +22,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message: isValidationError ? 'Validation failed' : (body.message ?? body),
       errors: isValidationError
         ? body.message.map((msg: string) => ({
-            field: msg.split(' ')[0],
+            field: msg.startsWith('each value in ') ? msg.split(' ')[3] : msg.split(' ')[0],
             message: msg,
           }))
         : [],
