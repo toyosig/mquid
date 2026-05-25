@@ -8,6 +8,6 @@ export class LoginDto {
 
   @ApiProperty({ example: 'Admin1234!' })
   @IsString()
-  @MinLength(6)
+  @MinLength(1)
   password: string;
 }
