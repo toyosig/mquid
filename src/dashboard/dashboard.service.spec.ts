@@ -1,32 +1,29 @@
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { DashboardService } from './dashboard.service';
-import { ActivityEvent } from './entities/activity-event.entity';
-import { BlogPost } from '../blog/entities/blog-post.entity';
-import { User } from '../users/entities/user.entity';
+import { PrismaService } from '../prisma/prisma.service';
+
+const mockPrisma = {
+  blogPost: { count: jest.fn() },
+  user: { count: jest.fn() },
+  activityEvent: { findMany: jest.fn(), create: jest.fn() },
+  $queryRaw: jest.fn(),
+};
 
 describe('DashboardService - relativeTime', () => {
   let service: DashboardService;
-
-  const activityRepo = { save: jest.fn(), create: jest.fn(), find: jest.fn() };
-  const blogRepo = { count: jest.fn(), query: jest.fn() };
-  const userRepo = { count: jest.fn() };
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
       providers: [
         DashboardService,
-        { provide: getRepositoryToken(ActivityEvent), useValue: activityRepo },
-        { provide: getRepositoryToken(BlogPost), useValue: blogRepo },
-        { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();
     service = module.get(DashboardService);
   });
 
   it('returns "just now" for recent events', () => {
-    const now = new Date();
-    expect(service.relativeTime(now)).toBe('just now');
+    expect(service.relativeTime(new Date())).toBe('just now');
   });
 
   it('returns minutes ago', () => {

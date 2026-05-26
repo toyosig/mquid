@@ -41,3 +41,10 @@ lerna-debug.log*
 
 # TypeScript incremental compilation cache
 *.tsbuildinfo
+
+# Uploaded files — ignore content but keep directory structure
+uploads/*/*
+!uploads/**/.gitkeep
+
+# Claude Code agent workspace
+.claude/

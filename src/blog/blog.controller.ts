@@ -18,6 +18,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { User } from '@prisma/client';
 import { BlogService } from './blog.service';
 import { CreateBlogPostDto } from './dto/create-blog-post.dto';
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto';
@@ -30,8 +31,12 @@ export class BlogController {
   @Get()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all posts (all statuses)' })
-  findAll(@Query() pagination: PaginationDto) {
-    return this.blogService.findAll(pagination.page, pagination.limit);
+  findAll(
+    @Query() pagination: PaginationDto,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.blogService.findAll(pagination, status, search);
   }
 
   @Public()
@@ -51,7 +56,7 @@ export class BlogController {
   @Post()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new blog post' })
-  create(@Body() dto: CreateBlogPostDto, @CurrentUser() user: any) {
+  create(@Body() dto: CreateBlogPostDto, @CurrentUser() user: User) {
     return this.blogService.create(dto, user);
   }
 
@@ -61,7 +66,7 @@ export class BlogController {
   update(
     @Param('id') id: string,
     @Body() dto: UpdateBlogPostDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: User,
   ) {
     return this.blogService.update(id, dto, user);
   }
@@ -71,7 +76,7 @@ export class BlogController {
   @Roles('super_admin')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete a post (super_admin only)' })
-  remove(@Param('id') id: string, @CurrentUser() user: any) {
+  remove(@Param('id') id: string, @CurrentUser() user: User) {
     return this.blogService.remove(id, user);
   }
 }

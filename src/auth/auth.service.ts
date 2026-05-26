@@ -1,18 +1,13 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
-import { Repository } from 'typeorm';
+import { createHash, randomUUID } from 'crypto';
 import { DashboardService } from '../dashboard/dashboard.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { PasswordResetToken } from './entities/password-reset-token.entity';
 
 @Injectable()
 export class AuthService {
@@ -20,8 +15,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly dashboardService: DashboardService,
-    @InjectRepository(PasswordResetToken)
-    private readonly tokenRepo: Repository<PasswordResetToken>,
+    private readonly prisma: PrismaService,
   ) {}
 
   async login(dto: LoginDto) {
@@ -34,27 +28,25 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email, role: user.role };
     const access_token = this.jwtService.sign(payload);
 
-    await this.dashboardService.logActivity(
-      'login',
-      `Admin logged in: ${user.name}`,
-      user,
+    this.dashboardService.logActivity('login', `Admin logged in: ${user.name}`, user as any).catch(
+      (err) => console.error('[AuthService] logActivity failed:', err),
     );
 
-    // Strip password before returning
-    const { password: _pw, ...userSafe } = user as any;
+    const { password: _pw, ...userSafe } = user;
     return { access_token, user: userSafe };
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
     const user = await this.usersService.findByEmail(dto.email);
-    if (!user) return; // silently ignore — don't leak whether email exists
+    if (!user) return;
 
-    const rawToken = crypto.randomUUID();
+    const rawToken = randomUUID();
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    const resetToken = this.tokenRepo.create({ token: tokenHash, user, expiresAt });
-    await this.tokenRepo.save(resetToken);
+    await this.prisma.passwordResetToken.create({
+      data: { token: tokenHash, userId: user.id, expiresAt },
+    });
 
     // TODO: send email with rawToken
     console.log('[DEV] Password reset token:', rawToken);
@@ -62,9 +54,9 @@ export class AuthService {
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
     const tokenHash = createHash('sha256').update(dto.token).digest('hex');
-    const record = await this.tokenRepo.findOne({
+    const record = await this.prisma.passwordResetToken.findUnique({
       where: { token: tokenHash },
-      relations: { user: true },
+      include: { user: true },
     });
 
     if (!record || record.used || record.expiresAt < new Date()) {
@@ -72,9 +64,9 @@ export class AuthService {
     }
 
     const hashed = await bcrypt.hash(dto.newPassword, 10);
-    await this.usersService.update(record.user.id, { password: hashed });
-
-    record.used = true;
-    await this.tokenRepo.save(record);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: record.user.id }, data: { password: hashed } }),
+      this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { used: true } }),
+    ]);
   }
 }

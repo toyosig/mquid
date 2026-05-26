@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDate,
   IsIn,
   IsOptional,
   IsString,
@@ -65,6 +66,7 @@ export class CreateBlogPostDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsDate()
   @Type(() => Date)
   scheduledAt?: Date;
 }

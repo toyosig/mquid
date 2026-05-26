@@ -1,66 +1,54 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { BlogPost } from '../blog/entities/blog-post.entity';
-import { User } from '../users/entities/user.entity';
-import { ActivityEvent } from './entities/activity-event.entity';
+import { ActivityType, Prisma, User } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(
-    @InjectRepository(ActivityEvent)
-    private readonly activityRepo: Repository<ActivityEvent>,
-    @InjectRepository(BlogPost)
-    private readonly blogPostRepo: Repository<BlogPost>,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getStats() {
     const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
-      this.blogPostRepo.count(),
-      this.blogPostRepo.count({ where: { status: 'published' } }),
-      this.blogPostRepo.count({ where: { status: 'draft' } }),
-      this.userRepo.count(),
+      this.prisma.blogPost.count(),
+      this.prisma.blogPost.count({ where: { status: 'published' } }),
+      this.prisma.blogPost.count({ where: { status: 'draft' } }),
+      this.prisma.user.count(),
     ]);
     return { totalPosts, publishedPosts, draftPosts, totalUsers };
   }
 
   async getActivity() {
-    const events = await this.activityRepo.find({
-      order: { createdAt: 'DESC' },
+    const events = await this.prisma.activityEvent.findMany({
+      orderBy: { createdAt: 'desc' },
       take: 20,
+      include: { user: { omit: { password: true } } },
     });
     return events.map((e) => ({ ...e, time: this.relativeTime(e.createdAt) }));
   }
 
   async getChart(days: number) {
-    const result = await this.blogPostRepo.query(
-      `
-      SELECT
-        to_char(d::date, 'YYYY-MM-DD') AS date,
-        COALESCE(COUNT(p.id), 0)::int AS posts
-      FROM generate_series(
-        NOW() - INTERVAL $1,
-        NOW(),
-        INTERVAL '1 day'
-      ) AS d
-      LEFT JOIN blog_posts p ON DATE(p.created_at) = d::date
-      GROUP BY d
-      ORDER BY d ASC
+    const safeDays = Math.min(Math.max(1, days), 90);
+    const interval = `${safeDays} days`;
+    return this.prisma.$queryRaw<{ date: string; posts: number }[]>(
+      Prisma.sql`
+        SELECT
+          to_char(d::date, 'YYYY-MM-DD') AS date,
+          COALESCE(COUNT(p.id), 0)::int AS posts
+        FROM generate_series(
+          NOW() - CAST(${interval} AS interval),
+          NOW(),
+          INTERVAL '1 day'
+        ) AS d
+        LEFT JOIN blog_posts p ON DATE(p.created_at) = d::date
+        GROUP BY d
+        ORDER BY d ASC
       `,
-      [`${days} days`],
     );
-    return result;
   }
 
-  async logActivity(
-    type: 'publish' | 'draft' | 'login' | 'delete' | 'edit',
-    message: string,
-    user: User,
-  ) {
-    const event = this.activityRepo.create({ type, message, user });
-    await this.activityRepo.save(event);
+  async logActivity(type: ActivityType, message: string, user: User): Promise<void> {
+    await this.prisma.activityEvent.create({
+      data: { type, message, userId: user.id },
+    });
   }
 
   relativeTime(date: Date): string {
@@ -70,7 +58,6 @@ export class DashboardService {
     if (minutes < 60) return `${minutes}m ago`;
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
+    return `${Math.floor(hours / 24)}d ago`;
   }
 }
