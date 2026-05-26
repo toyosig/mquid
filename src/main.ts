@@ -37,7 +37,6 @@ async function bootstrap() {
     .setDescription('Admin backend for MyMquid Elevate platform')
     .setVersion('1.0')
     .addBearerAuth()
-    .addServer('/api/v1', 'Local development')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
