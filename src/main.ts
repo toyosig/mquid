@@ -12,7 +12,12 @@ async function bootstrap() {
 
   // CORS
   app.enableCors({
-    origin: [process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173', 'https://mymquid.com'],
+    origin: [
+      process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173',
+      'http://localhost:8080',
+      'http://localhost:5173',
+      'https://mymquid.com',
+    ],
     credentials: true,
   });
 
