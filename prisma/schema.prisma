@@ -38,15 +38,18 @@ model User {
   id                  String               @id @default(uuid())
   name                String
   email               String               @unique
-  password            String
+  password            String?
   role                UserRole             @default(staff)
   avatar              String?
+  active              Boolean              @default(true)
+  lastLogin           DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   blogPosts           BlogPost[]
   activityEvents      ActivityEvent[]
   notifications       Notification[]
   passwordResetTokens PasswordResetToken[]
+  inviteTokens        InviteToken[]
 
   @@map("admin_users")
 }
@@ -111,4 +114,16 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@map("password_reset_tokens")
+}
+
+model InviteToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("invite_tokens")
 }

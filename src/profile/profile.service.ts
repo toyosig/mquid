@@ -37,6 +37,10 @@ export class ProfileService {
       throw new NotFoundException('User not found');
     }
 
+    if (!user.password) {
+      throw new UnauthorizedException('Account has no password set');
+    }
+
     const passwordMatch = await bcrypt.compare(
       dto.currentPassword,
       user.password,

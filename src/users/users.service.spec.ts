@@ -8,6 +8,8 @@ const mockUser = {
   name: 'Test',
   role: 'staff' as const,
   avatar: null,
+  active: true,
+  lastLogin: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -70,10 +72,12 @@ describe('UsersService', () => {
       password: 'hash',
       role: 'staff',
       avatar: null,
+      active: true,
+      lastLogin: null,
     });
     expect(result).toEqual(mockUser);
     expect(mockPrisma.user.create).toHaveBeenCalledWith({
-      data: { name: 'Test', email: 'a@b.com', password: 'hash', role: 'staff', avatar: null },
+      data: { name: 'Test', email: 'a@b.com', password: 'hash', role: 'staff', avatar: null, active: true, lastLogin: null },
       omit: { password: true },
     });
   });
