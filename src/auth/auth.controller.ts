@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -38,6 +39,14 @@ export class AuthController {
   @ApiOperation({ summary: 'Reset password using token' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Public()
+  @Post('set-password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Set password from invite token (first-time setup)' })
+  setPassword(@Body() dto: SetPasswordDto) {
+    return this.authService.setPassword(dto);
   }
 
   @Get('me')

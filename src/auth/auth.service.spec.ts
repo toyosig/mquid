@@ -20,6 +20,8 @@ const mockUser = {
   name: 'Patrick Evra',
   role: 'super_admin' as const,
   avatar: null,
+  active: true,
+  lastLogin: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -30,6 +32,7 @@ describe('AuthService - login', () => {
   const jwtService = { sign: jest.fn().mockReturnValue('jwt-token') };
   const dashboardService = { logActivity: jest.fn() };
   const mockPrisma = {
+    user: { update: jest.fn() },
     passwordResetToken: {
       create: jest.fn(),
       findUnique: jest.fn(),

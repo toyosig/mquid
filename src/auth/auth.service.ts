@@ -8,6 +8,7 @@ import { UsersService } from '../users/users.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -24,6 +25,10 @@ export class AuthService {
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
+
+    if (!user.active) throw new UnauthorizedException('Account is deactivated');
+
+    await this.prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
 
     const payload = { sub: user.id, email: user.email, role: user.role };
     const access_token = this.jwtService.sign(payload);
@@ -68,5 +73,35 @@ export class AuthService {
       this.prisma.user.update({ where: { id: record.user.id }, data: { password: hashed } }),
       this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { used: true } }),
     ]);
+  }
+
+  async setPassword(dto: SetPasswordDto): Promise<{ access_token: string; user: any }> {
+    if (dto.password !== dto.confirmPassword) {
+      throw new UnauthorizedException('Passwords do not match');
+    }
+
+    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const record = await this.prisma.inviteToken.findUnique({
+      where: { token: tokenHash },
+      include: { user: true },
+    });
+
+    if (!record || record.used || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired invite token');
+    }
+
+    const hashed = await bcrypt.hash(dto.password, 10);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: record.user.id }, data: { password: hashed } }),
+      this.prisma.inviteToken.update({ where: { id: record.id }, data: { used: true } }),
+    ]);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: record.user.id },
+      omit: { password: true },
+    });
+    const payload = { sub: user!.id, email: user!.email, role: user!.role };
+    const access_token = this.jwtService.sign(payload);
+    return { access_token, user };
   }
 }
