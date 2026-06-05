@@ -7,6 +7,7 @@ import {
 import { BlogPost, PostStatus, User } from '@prisma/client';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { DashboardService } from '../dashboard/dashboard.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBlogPostDto } from './dto/create-blog-post.dto';
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto';
@@ -18,6 +19,7 @@ export class BlogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dashboardService: DashboardService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll(pagination: PaginationDto, status?: string, search?: string) {
@@ -94,6 +96,18 @@ export class BlogService {
         : `Post saved as draft: ${saved.title}`;
     await this.dashboardService.logActivity(activityType, activityMsg, author as any);
 
+    const isPublished = saved.status === 'published';
+    const isScheduled = saved.status === 'scheduled';
+    this.notificationsService.createForAllUsers({
+      title: isPublished ? 'Post Published' : isScheduled ? 'Post Scheduled' : 'New Draft Created',
+      message: isPublished
+        ? `"${saved.title}" is now live.`
+        : isScheduled
+          ? `"${saved.title}" is scheduled for publication.`
+          : `"${saved.title}" was saved as a draft.`,
+      type: isPublished ? 'success' : 'info',
+    }).catch((err) => console.error('[BlogService] notification failed:', err));
+
     return this.mapToResponse(saved as BlogPostWithAuthor);
   }
 
@@ -119,6 +133,15 @@ export class BlogService {
     });
     await this.dashboardService.logActivity('edit', `Post updated: ${updated.title}`, user as any);
 
+    const justPublished = post.status !== 'published' && updated.status === 'published';
+    this.notificationsService.createForAllUsers({
+      title: justPublished ? 'Post Published' : 'Post Updated',
+      message: justPublished
+        ? `"${updated.title}" is now live.`
+        : `"${updated.title}" was updated by ${(user as any).name ?? 'an admin'}.`,
+      type: justPublished ? 'success' : 'info',
+    }).catch((err) => console.error('[BlogService] notification failed:', err));
+
     return this.mapToResponse(updated as BlogPostWithAuthor);
   }
 
@@ -127,6 +150,12 @@ export class BlogService {
     if (!post) throw new NotFoundException('Blog post not found');
     await this.prisma.blogPost.delete({ where: { id } });
     await this.dashboardService.logActivity('delete', `Post deleted: ${post.title}`, user as any);
+
+    this.notificationsService.createForAllUsers({
+      title: 'Post Deleted',
+      message: `"${post.title}" was permanently deleted.`,
+      type: 'warning',
+    }).catch((err) => console.error('[BlogService] notification failed:', err));
   }
 
   mapToResponse(post: BlogPostWithAuthor) {

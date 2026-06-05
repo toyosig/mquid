@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { Test } from '@nestjs/testing';
 import { BlogService } from './blog.service';
 import { DashboardService } from '../dashboard/dashboard.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const mockAuthor = { id: 'user-1', role: 'staff', name: 'Staff User' };
@@ -38,6 +39,7 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 const dashboardService = { logActivity: jest.fn() };
+const notificationsService = { createForAllUsers: jest.fn().mockResolvedValue(undefined) };
 
 describe('BlogService', () => {
   let service: BlogService;
@@ -48,6 +50,7 @@ describe('BlogService', () => {
         BlogService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: DashboardService, useValue: dashboardService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
     service = module.get(BlogService);

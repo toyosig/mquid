@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { BlogController } from './blog.controller';
 import { BlogService } from './blog.service';
 
 @Module({
-  imports: [DashboardModule],
+  imports: [DashboardModule, NotificationsModule],
   controllers: [BlogController],
   providers: [BlogService],
   exports: [BlogService],

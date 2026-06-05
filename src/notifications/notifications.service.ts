@@ -43,4 +43,27 @@ export class NotificationsService {
     });
     return { updated: result.count };
   }
+
+  async createForAllUsers(payload: {
+    title: string;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+  }): Promise<void> {
+    const users = await this.prisma.user.findMany({
+      where: { active: true },
+      select: { id: true },
+    });
+
+    if (users.length === 0) return;
+
+    await this.prisma.notification.createMany({
+      data: users.map((user) => ({
+        userId: user.id,
+        title: payload.title,
+        message: payload.message,
+        type: payload.type as any,
+        read: false,
+      })),
+    });
+  }
 }
