@@ -85,12 +85,28 @@ export class UsersService {
     return map;
   }
 
-  private attachStats<T extends { id: string }>(
+  private lastSeen(date: Date | null): string {
+    if (!date) return 'Never';
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(months / 12)}y ago`;
+  }
+
+  private attachStats<T extends { id: string; lastLogin?: Date | null }>(
     user: T,
     statsMap: Record<string, { published: number; drafts: number; scheduled: number; total: number }>,
   ) {
     return {
       ...user,
+      lastSeen: this.lastSeen(user.lastLogin ?? null),
       stats: statsMap[user.id] ?? { published: 0, drafts: 0, scheduled: 0, total: 0 },
     };
   }
