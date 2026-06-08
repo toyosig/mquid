@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { BlogPost, PostStatus, User } from '@prisma/client';
 import { Cache } from 'cache-manager';
-import { CK, TTL } from '../cache/cache-keys';
+import { CK, GEN, TTL } from '../cache/cache-keys';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -29,14 +29,15 @@ export class BlogService {
 
   async findAll(pagination: PaginationDto, status?: string, search?: string) {
     const { page, limit } = pagination;
+    const gen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
+    const key = CK.BLOG_LIST(gen, page, limit, status, search);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
     const validStatuses: string[] = ['draft', 'published', 'scheduled'];
     const where: any = {};
-    if (status && validStatuses.includes(status)) {
-      where.status = status as PostStatus;
-    }
-    if (search) {
-      where.title = { contains: search, mode: 'insensitive' };
-    }
+    if (status && validStatuses.includes(status)) where.status = status as PostStatus;
+    if (search) where.title = { contains: search, mode: 'insensitive' };
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
@@ -49,17 +50,20 @@ export class BlogService {
       this.prisma.blogPost.count({ where }),
     ]);
 
-    return {
+    const result = {
       data: data.map((p) => this.mapToResponse(p as BlogPostWithAuthor)),
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
     };
+    await this.cache.set(key, result, TTL.LIST);
+    return result;
   }
 
   async findPublic(page: number, limit: number) {
-    const key = CK.PUBLIC(page, limit);
+    const gen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
+    const key = CK.PUBLIC(gen, page, limit);
     const cached = await this.cache.get<object>(key);
     if (cached) return cached;
 
@@ -81,7 +85,7 @@ export class BlogService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
-    await this.cache.set(key, result, TTL.PUBLIC);
+    await this.cache.set(key, result, TTL.LIST);
     return result;
   }
 
@@ -115,15 +119,17 @@ export class BlogService {
 
     const isPublished = saved.status === 'published';
     const isScheduled = saved.status === 'scheduled';
-    this.notificationsService.createForAllUsers({
-      title: isPublished ? 'Post Published' : isScheduled ? 'Post Scheduled' : 'New Draft Created',
-      message: isPublished
-        ? `"${saved.title}" is now live.`
-        : isScheduled
-          ? `"${saved.title}" is scheduled for publication.`
-          : `"${saved.title}" was saved as a draft.`,
-      type: isPublished ? 'success' : 'info',
-    }).catch((err) => console.error('[BlogService] notification failed:', err));
+    this.notificationsService
+      .createForAllUsers({
+        title: isPublished ? 'Post Published' : isScheduled ? 'Post Scheduled' : 'New Draft Created',
+        message: isPublished
+          ? `"${saved.title}" is now live.`
+          : isScheduled
+            ? `"${saved.title}" is scheduled for publication.`
+            : `"${saved.title}" was saved as a draft.`,
+        type: isPublished ? 'success' : 'info',
+      })
+      .catch((err) => console.error('[BlogService] notification failed:', err));
 
     this.dashboardService.invalidatePostCaches().catch(() => null);
     return this.mapToResponse(saved as BlogPostWithAuthor);
@@ -152,13 +158,15 @@ export class BlogService {
     await this.dashboardService.logActivity('edit', `Post updated: ${updated.title}`, user as any);
 
     const justPublished = post.status !== 'published' && updated.status === 'published';
-    this.notificationsService.createForAllUsers({
-      title: justPublished ? 'Post Published' : 'Post Updated',
-      message: justPublished
-        ? `"${updated.title}" is now live.`
-        : `"${updated.title}" was updated by ${(user as any).name ?? 'an admin'}.`,
-      type: justPublished ? 'success' : 'info',
-    }).catch((err) => console.error('[BlogService] notification failed:', err));
+    this.notificationsService
+      .createForAllUsers({
+        title: justPublished ? 'Post Published' : 'Post Updated',
+        message: justPublished
+          ? `"${updated.title}" is now live.`
+          : `"${updated.title}" was updated by ${(user as any).name ?? 'an admin'}.`,
+        type: justPublished ? 'success' : 'info',
+      })
+      .catch((err) => console.error('[BlogService] notification failed:', err));
 
     this.dashboardService.invalidatePostCaches(id).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
@@ -170,11 +178,13 @@ export class BlogService {
     await this.prisma.blogPost.delete({ where: { id } });
     await this.dashboardService.logActivity('delete', `Post deleted: ${post.title}`, user as any);
 
-    this.notificationsService.createForAllUsers({
-      title: 'Post Deleted',
-      message: `"${post.title}" was permanently deleted.`,
-      type: 'warning',
-    }).catch((err) => console.error('[BlogService] notification failed:', err));
+    this.notificationsService
+      .createForAllUsers({
+        title: 'Post Deleted',
+        message: `"${post.title}" was permanently deleted.`,
+        type: 'warning',
+      })
+      .catch((err) => console.error('[BlogService] notification failed:', err));
 
     this.dashboardService.invalidatePostCaches(id).catch(() => null);
   }

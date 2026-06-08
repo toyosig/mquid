@@ -2,7 +2,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import { ActivityType, Prisma, User } from '@prisma/client';
 import { Cache } from 'cache-manager';
-import { CK, TTL } from '../cache/cache-keys';
+import { CK, GEN, TTL } from '../cache/cache-keys';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -75,7 +75,12 @@ export class DashboardService {
     await this.cache.del(CK.DASHBOARD_ACTIVITY);
   }
 
+  // Called by BlogService after any create / update / delete.
+  // Bumps gen:blog so all list caches (blog list, public, user posts) become stale.
   async invalidatePostCaches(postId?: string): Promise<void> {
+    const currentGen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
+    await this.cache.set(GEN.BLOG, currentGen + 1, TTL.GEN);
+
     await Promise.all([
       this.cache.del(CK.DASHBOARD_STATS),
       this.cache.del(CK.DASHBOARD_ACTIVITY),

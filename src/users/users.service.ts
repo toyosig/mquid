@@ -1,11 +1,15 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { User, UserRole } from '@prisma/client';
+import { Cache } from 'cache-manager';
 import { createHash, randomUUID } from 'crypto';
+import { CK, GEN, TTL } from '../cache/cache-keys';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -13,9 +17,12 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
 
-  // ─── Used by AuthModule ─────────────────────────────────────────
+  // ─── Used by AuthModule / ProfileModule (never cached — auth needs live data) ──
 
   findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email }, omit: { password: true } });
@@ -39,6 +46,17 @@ export class UsersService {
 
   update(id: string, data: Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt'>>) {
     return this.prisma.user.update({ where: { id }, data, omit: { password: true } });
+  }
+
+  // ─── Cache helpers ────────────────────────────────────────────────
+
+  async invalidateUserCaches(userId: string): Promise<void> {
+    const currentGen = (await this.cache.get<number>(GEN.USER)) ?? 0;
+    await this.cache.set(GEN.USER, currentGen + 1, TTL.GEN);
+    await Promise.all([
+      this.cache.del(CK.USER_DETAIL(userId)),
+      this.cache.del(CK.PROFILE(userId)),
+    ]);
   }
 
   // ─── User management (super_admin only) ──────────────────────────
@@ -77,6 +95,11 @@ export class UsersService {
 
   async findAllWithStats(pagination: PaginationDto) {
     const { page, limit } = pagination;
+    const gen = (await this.cache.get<number>(GEN.USER)) ?? 0;
+    const key = CK.USER_LIST(gen, page, limit);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
         omit: { password: true },
@@ -88,20 +111,28 @@ export class UsersService {
     ]);
 
     const statsMap = await this.computeStats(users.map((u) => u.id));
-    return {
+    const result = {
       data: users.map((u) => this.attachStats(u, statsMap)),
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
     };
+    await this.cache.set(key, result, TTL.LIST);
+    return result;
   }
 
   async findOneWithStats(id: string) {
+    const key = CK.USER_DETAIL(id);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
     const user = await this.prisma.user.findUnique({ where: { id }, omit: { password: true } });
     if (!user) throw new NotFoundException('User not found');
     const statsMap = await this.computeStats([id]);
-    return this.attachStats(user, statsMap);
+    const result = this.attachStats(user, statsMap);
+    await this.cache.set(key, result, TTL.USER_DETAIL);
+    return result;
   }
 
   async createWithInvite(dto: CreateUserDto, frontendOrigin: string) {
@@ -124,7 +155,12 @@ export class UsersService {
     console.log(`[DEV] Invite link: ${frontendOrigin}/admin/set-password?token=${rawToken}`);
 
     const statsMap = await this.computeStats([user.id]);
-    return this.attachStats(user, statsMap);
+    const result = this.attachStats(user, statsMap);
+
+    const currentGen = (await this.cache.get<number>(GEN.USER)) ?? 0;
+    await this.cache.set(GEN.USER, currentGen + 1, TTL.GEN);
+
+    return result;
   }
 
   async updateUser(id: string, dto: UpdateUserDto) {
@@ -142,13 +178,15 @@ export class UsersService {
       omit: { password: true },
     });
     const statsMap = await this.computeStats([id]);
-    return this.attachStats(updated, statsMap);
+    const result = this.attachStats(updated, statsMap);
+
+    await this.invalidateUserCaches(id);
+    await this.cache.set(CK.USER_DETAIL(id), result, TTL.USER_DETAIL);
+    return result;
   }
 
   async updateStatus(id: string, active: boolean, requesterId: string) {
-    if (id === requesterId) {
-      throw new BadRequestException('Cannot deactivate your own account');
-    }
+    if (id === requesterId) throw new BadRequestException('Cannot deactivate your own account');
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -158,13 +196,15 @@ export class UsersService {
       omit: { password: true },
     });
     const statsMap = await this.computeStats([id]);
-    return this.attachStats(updated, statsMap);
+    const result = this.attachStats(updated, statsMap);
+
+    await this.invalidateUserCaches(id);
+    await this.cache.set(CK.USER_DETAIL(id), result, TTL.USER_DETAIL);
+    return result;
   }
 
   async deleteUser(id: string, requesterId: string) {
-    if (id === requesterId) {
-      throw new BadRequestException('Cannot delete your own account');
-    }
+    if (id === requesterId) throw new BadRequestException('Cannot delete your own account');
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -172,6 +212,8 @@ export class UsersService {
       this.prisma.blogPost.deleteMany({ where: { authorId: id } }),
       this.prisma.user.delete({ where: { id } }),
     ]);
+
+    await this.invalidateUserCaches(id);
   }
 
   async triggerPasswordReset(id: string, frontendOrigin: string) {
@@ -195,6 +237,11 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const { page, limit } = pagination;
+    const blogGen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
+    const key = CK.USER_POSTS(id, blogGen, page, limit);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
         where: { authorId: id },
@@ -206,6 +253,8 @@ export class UsersService {
       this.prisma.blogPost.count({ where: { authorId: id } }),
     ]);
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    const result = { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    await this.cache.set(key, result, TTL.LIST);
+    return result;
   }
 }
