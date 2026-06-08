@@ -72,6 +72,14 @@ export class UsersController {
     return this.usersService.triggerPasswordReset(id, origin);
   }
 
+  @Post(':id/resend-invite')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Resend invite email for a user who has not set their password yet' })
+  resendInvite(@Param('id') id: string) {
+    const origin = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
+    return this.usersService.resendInvite(id, origin);
+  }
+
   @Get(':id/posts')
   @ApiOperation({ summary: 'Get all blog posts authored by this user' })
   getUserPosts(@Param('id') id: string, @Query() pagination: PaginationDto) {

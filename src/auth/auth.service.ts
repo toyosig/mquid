@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomUUID } from 'crypto';
@@ -88,6 +88,10 @@ export class AuthService {
 
     if (!record || record.used || record.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired invite token');
+    }
+
+    if (record.user.password) {
+      throw new BadRequestException('Password has already been set for this account. Use forgot password to reset it.');
     }
 
     const hashed = await bcrypt.hash(dto.password, 10);

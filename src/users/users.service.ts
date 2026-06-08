@@ -11,6 +11,7 @@ import { Cache } from 'cache-manager';
 import { createHash, randomUUID } from 'crypto';
 import { CK, GEN, TTL } from '../cache/cache-keys';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -19,6 +20,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
@@ -135,6 +137,22 @@ export class UsersService {
     return result;
   }
 
+  private async createInviteToken(userId: string): Promise<string> {
+    // Invalidate any existing unused tokens for this user first
+    await this.prisma.inviteToken.updateMany({
+      where: { userId, used: false },
+      data: { used: true },
+    });
+
+    const rawToken = randomUUID();
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    await this.prisma.inviteToken.create({
+      data: { token: tokenHash, userId, expiresAt },
+    });
+    return rawToken;
+  }
+
   async createWithInvite(dto: CreateUserDto, frontendOrigin: string) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already in use');
@@ -144,15 +162,10 @@ export class UsersService {
       omit: { password: true },
     });
 
-    const rawToken = randomUUID();
-    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const rawToken = await this.createInviteToken(user.id);
+    const inviteLink = `${frontendOrigin}/admin/set-password?token=${rawToken}`;
 
-    await this.prisma.inviteToken.create({
-      data: { token: tokenHash, userId: user.id, expiresAt },
-    });
-
-    console.log(`[DEV] Invite link: ${frontendOrigin}/admin/set-password?token=${rawToken}`);
+    await this.mailService.sendInviteEmail(user.email, user.name, inviteLink);
 
     const statsMap = await this.computeStats([user.id]);
     const result = this.attachStats(user, statsMap);
@@ -161,6 +174,23 @@ export class UsersService {
     await this.cache.set(GEN.USER, currentGen + 1, TTL.GEN);
 
     return result;
+  }
+
+  async resendInvite(id: string, frontendOrigin: string) {
+    const user = await this.prisma.user.findUnique({ where: { id }, omit: { password: true } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const userWithPw = await this.prisma.user.findUnique({ where: { id } });
+    if (userWithPw?.password) {
+      throw new BadRequestException('User has already set their password');
+    }
+
+    const rawToken = await this.createInviteToken(id);
+    const inviteLink = `${frontendOrigin}/admin/set-password?token=${rawToken}`;
+
+    await this.mailService.sendInviteEmail(user.email, user.name, inviteLink);
+
+    return { message: 'Invite email resent successfully' };
   }
 
   async updateUser(id: string, dto: UpdateUserDto) {

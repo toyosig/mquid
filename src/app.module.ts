@@ -14,6 +14,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import jwtConfig from './config/jwt.config';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProfileModule } from './profile/profile.module';
@@ -43,6 +44,7 @@ import { UploadModule } from './upload/upload.module';
       serveRoot: '/uploads',
     }),
     PrismaModule,
+    MailModule,
     AuthModule,
     BlogModule,
     DashboardModule,
