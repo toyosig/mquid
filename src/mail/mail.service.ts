@@ -1,36 +1,41 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as sgMail from '@sendgrid/mail';
+import * as nodemailer from 'nodemailer';
+import { Transporter } from 'nodemailer';
 
 @Injectable()
 export class MailService {
-  private readonly enabled: boolean;
+  private readonly transporter: Transporter | null = null;
   private readonly fromEmail: string;
   private readonly logger = new Logger(MailService.name);
 
   constructor(private readonly config: ConfigService) {
-    const apiKey = this.config.get<string>('SENDGRID_API_KEY');
-    this.fromEmail = this.config.get<string>('SENDGRID_FROM_EMAIL') ?? 'noreply@mymquid.com';
+    const gmailUser = this.config.get<string>('GMAIL_USER');
+    const gmailPass = this.config.get<string>('GMAIL_APP_PASSWORD');
 
-    if (apiKey) {
-      sgMail.setApiKey(apiKey);
-      this.enabled = true;
+    this.fromEmail = `MyMquid Elevate <${gmailUser ?? 'noreply@mymquid.com'}>`;
+
+    if (gmailUser && gmailPass) {
+      this.transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: gmailUser, pass: gmailPass },
+      });
+      this.logger.log(`Mail service ready (Gmail: ${gmailUser})`);
     } else {
-      this.logger.warn('SENDGRID_API_KEY not set — emails will be logged to console only');
-      this.enabled = false;
+      this.logger.warn('GMAIL_USER / GMAIL_APP_PASSWORD not set — emails will be logged to console only');
     }
   }
 
   async sendInviteEmail(to: string, name: string, inviteLink: string): Promise<void> {
-    if (!this.enabled) {
+    if (!this.transporter) {
       this.logger.log(`[DEV] Invite email to ${to} — link: ${inviteLink}`);
       return;
     }
 
     try {
-      await sgMail.send({
-        to,
+      await this.transporter.sendMail({
         from: this.fromEmail,
+        to,
         subject: 'You have been invited to MyMquid Elevate',
         html: this.inviteTemplate(name, inviteLink),
       });
@@ -95,8 +100,8 @@ export class MailService {
               <hr style="border:none;border-top:1px solid #e5e7eb;margin:0 0 24px;" />
 
               <p style="margin:0;font-size:13px;color:#9ca3af;line-height:1.5;">
-                This invite link expires in <strong>48 hours</strong>. If you were not expecting this
-                invitation, you can safely ignore this email.
+                This invite link expires in <strong>48 hours</strong>. If you were not expecting
+                this invitation, you can safely ignore this email.
               </p>
             </td>
           </tr>
