@@ -7,13 +7,14 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getStats() {
-    const [totalPosts, publishedPosts, draftPosts, totalUsers] = await Promise.all([
+    const [totalPosts, published, drafts, scheduled, totalUsers] = await Promise.all([
       this.prisma.blogPost.count(),
       this.prisma.blogPost.count({ where: { status: 'published' } }),
       this.prisma.blogPost.count({ where: { status: 'draft' } }),
+      this.prisma.blogPost.count({ where: { status: 'scheduled' } }),
       this.prisma.user.count(),
     ]);
-    return { totalPosts, publishedPosts, draftPosts, totalUsers };
+    return { totalPosts, published, drafts, scheduled, totalUsers };
   }
 
   async getActivity() {
