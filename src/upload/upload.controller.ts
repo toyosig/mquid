@@ -19,7 +19,8 @@ import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
-const VALID_TYPES = ['avatar', 'blog-image', 'og-image'];
+const VALID_TYPES = ['avatar', 'blog-image', 'og-image', 'featured-image', 'image'];
+const DEFAULT_TYPE = 'blog-image';
 const MAX_SIZE = 5 * 1024 * 1024;
 
 @ApiTags('upload')
@@ -57,13 +58,11 @@ export class UploadController {
     @Query('type') type: string,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<{ url: string }> {
-    if (!VALID_TYPES.includes(type)) {
-      throw new BadRequestException(`type must be one of: ${VALID_TYPES.join(', ')}`);
-    }
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
-    const url = await this.uploadService.upload(file.buffer, type);
+    const resolvedType = VALID_TYPES.includes(type) ? type : DEFAULT_TYPE;
+    const url = await this.uploadService.upload(file.buffer, resolvedType);
     return { url };
   }
 }
