@@ -1,45 +1,44 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Resend } from 'resend';
+import * as sgMail from '@sendgrid/mail';
 
 @Injectable()
 export class MailService {
-  private readonly resend: Resend | null = null;
+  private readonly enabled: boolean;
   private readonly fromEmail: string;
   private readonly logger = new Logger(MailService.name);
 
   constructor(private readonly config: ConfigService) {
-    const apiKey = this.config.get<string>('RESEND_API_KEY');
-    this.fromEmail = this.config.get<string>('RESEND_FROM_EMAIL') ?? 'MyMquid <noreply@mymquid.com>';
+    const apiKey = this.config.get<string>('SENDGRID_API_KEY');
+    this.fromEmail = this.config.get<string>('SENDGRID_FROM_EMAIL') ?? 'noreply@mymquid.com';
+
     if (apiKey) {
-      this.resend = new Resend(apiKey);
+      sgMail.setApiKey(apiKey);
+      this.enabled = true;
     } else {
-      this.logger.warn('RESEND_API_KEY not set — emails will be logged to console only');
+      this.logger.warn('SENDGRID_API_KEY not set — emails will be logged to console only');
+      this.enabled = false;
     }
   }
 
   async sendInviteEmail(to: string, name: string, inviteLink: string): Promise<void> {
-    const subject = 'You have been invited to MyMquid Elevate';
-    const html = this.inviteTemplate(name, inviteLink);
-
-    if (!this.resend) {
+    if (!this.enabled) {
       this.logger.log(`[DEV] Invite email to ${to} — link: ${inviteLink}`);
       return;
     }
 
-    const { error } = await this.resend.emails.send({
-      from: this.fromEmail,
-      to,
-      subject,
-      html,
-    });
-
-    if (error) {
-      this.logger.error(`Failed to send invite email to ${to}: ${error.message}`);
-      throw new Error(`Email delivery failed: ${error.message}`);
+    try {
+      await sgMail.send({
+        to,
+        from: this.fromEmail,
+        subject: 'You have been invited to MyMquid Elevate',
+        html: this.inviteTemplate(name, inviteLink),
+      });
+      this.logger.log(`Invite email sent to ${to}`);
+    } catch (err: any) {
+      this.logger.error(`Failed to send invite email to ${to}: ${err.message}`);
+      throw new Error(`Email delivery failed: ${err.message}`);
     }
-
-    this.logger.log(`Invite email sent to ${to}`);
   }
 
   private inviteTemplate(name: string, inviteLink: string): string {
