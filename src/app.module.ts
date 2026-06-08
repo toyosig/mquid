@@ -1,7 +1,10 @@
+import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import KeyvRedis from '@keyv/redis';
+import Keyv from 'keyv';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -22,6 +25,18 @@ import { UploadModule } from './upload/upload.module';
       isGlobal: true,
       envFilePath: '.env',
       load: [jwtConfig],
+    }),
+    CacheModule.registerAsync({
+      isGlobal: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL');
+        if (!redisUrl) return {} as any;
+        return {
+          stores: [new Keyv({ store: new KeyvRedis(redisUrl), namespace: 'mquid' })],
+        };
+      },
     }),
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),

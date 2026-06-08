@@ -1,10 +1,14 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { BlogPost, PostStatus, User } from '@prisma/client';
+import { Cache } from 'cache-manager';
+import { CK, TTL } from '../cache/cache-keys';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -20,6 +24,7 @@ export class BlogService {
     private readonly prisma: PrismaService,
     private readonly dashboardService: DashboardService,
     private readonly notificationsService: NotificationsService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   async findAll(pagination: PaginationDto, status?: string, search?: string) {
@@ -54,6 +59,10 @@ export class BlogService {
   }
 
   async findPublic(page: number, limit: number) {
+    const key = CK.PUBLIC(page, limit);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
         where: { status: 'published' },
@@ -65,22 +74,30 @@ export class BlogService {
       this.prisma.blogPost.count({ where: { status: 'published' } }),
     ]);
 
-    return {
+    const result = {
       data: data.map((p) => this.mapToResponse(p as BlogPostWithAuthor)),
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
     };
+    await this.cache.set(key, result, TTL.PUBLIC);
+    return result;
   }
 
   async findOne(id: string) {
+    const key = CK.POST(id);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
     const post = await this.prisma.blogPost.findUnique({
       where: { id },
       include: { author: { omit: { password: true } } },
     });
     if (!post) throw new NotFoundException('Blog post not found');
-    return this.mapToResponse(post as BlogPostWithAuthor);
+    const result = this.mapToResponse(post as BlogPostWithAuthor);
+    await this.cache.set(key, result, TTL.POST);
+    return result;
   }
 
   async create(dto: CreateBlogPostDto, author: User) {
@@ -108,6 +125,7 @@ export class BlogService {
       type: isPublished ? 'success' : 'info',
     }).catch((err) => console.error('[BlogService] notification failed:', err));
 
+    this.dashboardService.invalidatePostCaches().catch(() => null);
     return this.mapToResponse(saved as BlogPostWithAuthor);
   }
 
@@ -142,6 +160,7 @@ export class BlogService {
       type: justPublished ? 'success' : 'info',
     }).catch((err) => console.error('[BlogService] notification failed:', err));
 
+    this.dashboardService.invalidatePostCaches(id).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
   }
 
@@ -156,6 +175,8 @@ export class BlogService {
       message: `"${post.title}" was permanently deleted.`,
       type: 'warning',
     }).catch((err) => console.error('[BlogService] notification failed:', err));
+
+    this.dashboardService.invalidatePostCaches(id).catch(() => null);
   }
 
   mapToResponse(post: BlogPostWithAuthor) {
