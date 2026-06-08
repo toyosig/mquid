@@ -4,6 +4,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { User, UserRole } from '@prisma/client';
@@ -181,7 +182,13 @@ export class UsersService {
     const rawToken = await this.createInviteToken(user.id);
     const inviteLink = `${frontendOrigin}/admin/set-password?token=${rawToken}`;
 
-    await this.mailService.sendInviteEmail(user.email, user.name, inviteLink);
+    try {
+      await this.mailService.sendInviteEmail(user.email, user.name, inviteLink);
+    } catch (err: any) {
+      throw new InternalServerErrorException(
+        `User created but email failed to send: ${err.message}. Invite link: ${inviteLink}`,
+      );
+    }
 
     const statsMap = await this.computeStats([user.id]);
     const result = this.attachStats(user, statsMap);
@@ -193,18 +200,23 @@ export class UsersService {
   }
 
   async resendInvite(id: string, frontendOrigin: string) {
-    const user = await this.prisma.user.findUnique({ where: { id }, omit: { password: true } });
+    const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
 
-    const userWithPw = await this.prisma.user.findUnique({ where: { id } });
-    if (userWithPw?.password) {
+    if (user.password) {
       throw new BadRequestException('User has already set their password');
     }
 
     const rawToken = await this.createInviteToken(id);
     const inviteLink = `${frontendOrigin}/admin/set-password?token=${rawToken}`;
 
-    await this.mailService.sendInviteEmail(user.email, user.name, inviteLink);
+    try {
+      await this.mailService.sendInviteEmail(user.email, user.name, inviteLink);
+    } catch (err: any) {
+      throw new InternalServerErrorException(
+        `User created but email failed to send: ${err.message}. Invite link: ${inviteLink}`,
+      );
+    }
 
     return { message: 'Invite email resent successfully' };
   }
