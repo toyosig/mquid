@@ -14,9 +14,10 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173',
-      'http://localhost:8080',
       'http://localhost:5173',
+      'http://localhost:8080',
       'https://mymquid.com',
+      'https://mymquid.vercel.app',
     ],
     credentials: true,
   });
