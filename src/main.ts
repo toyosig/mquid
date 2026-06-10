@@ -10,15 +10,9 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api/v1');
 
-  // CORS
+  // CORS — allow all origins
   app.enableCors({
-    origin: [
-      process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173',
-      'http://localhost:5173',
-      'http://localhost:8080',
-      'https://mymquid.com',
-      'https://mymquid.vercel.app',
-    ],
+    origin: true,
     credentials: true,
   });
 
