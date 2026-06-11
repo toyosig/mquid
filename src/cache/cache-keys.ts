@@ -13,12 +13,17 @@ export const CK = {
   DASHBOARD_ACTIVITY: 'dashboard:activity',
   CHART: (days: number) => `dashboard:chart:${days}`,
   COMMON_CHART_DAYS: [7, 14, 30, 60, 90] as const,
+  // Per-user (staff) dashboard caches
+  DASHBOARD_STATS_USER: (userId: string) => `dashboard:stats:user:${userId}`,
+  DASHBOARD_ACTIVITY_USER: (userId: string) => `dashboard:activity:user:${userId}`,
+  CHART_USER: (userId: string, days: number) => `dashboard:chart:user:${userId}:${days}`,
 
   // ── Blog ─────────────────────────────────────────────────────────
   POST: (id: string) => `blog:post:${id}`,
   PUBLIC: (gen: number, page: number, limit: number) => `blog:public:${gen}:${page}:${limit}`,
-  BLOG_LIST: (gen: number, page: number, limit: number, status = '', search = '') =>
-    `blog:list:${gen}:${page}:${limit}:${status}:${search}`,
+  // userId = '' for super_admin (sees all), userId = user id for staff (sees own only)
+  BLOG_LIST: (gen: number, page: number, limit: number, status = '', search = '', userId = '') =>
+    `blog:list:${gen}:${page}:${limit}:${status}:${search}:${userId}`,
   ADMIN_BLOG_LIST: (gen: number, page: number, limit: number, modStatus = '') =>
     `admin:blog:list:${gen}:${page}:${limit}:${modStatus}`,
 

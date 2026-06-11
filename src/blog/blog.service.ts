@@ -31,15 +31,19 @@ export class BlogService {
 
   // ─── Authenticated staff/admin list ──────────────────────────────────────────
 
-  async findAll(pagination: PaginationDto, status?: string, search?: string) {
+  async findAll(pagination: PaginationDto, currentUser: User, status?: string, search?: string) {
     const { page, limit } = pagination;
     const gen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
-    const key = CK.BLOG_LIST(gen, page, limit, status, search);
+
+    // Staff see only their own posts; admins see everything
+    const scopedUserId = currentUser.role === 'staff' ? currentUser.id : '';
+    const key = CK.BLOG_LIST(gen, page, limit, status, search, scopedUserId);
     const cached = await this.cache.get<object>(key);
     if (cached) return cached;
 
     const validStatuses: string[] = ['draft', 'published', 'scheduled'];
     const where: any = {};
+    if (currentUser.role === 'staff') where.authorId = currentUser.id;
     if (status && validStatuses.includes(status)) where.status = status as PostStatus;
     if (search) where.title = { contains: search, mode: 'insensitive' };
 
@@ -150,7 +154,7 @@ export class BlogService {
       })
       .catch((err) => console.error('[BlogService] notification failed:', err));
 
-    this.dashboardService.invalidatePostCaches().catch(() => null);
+    this.dashboardService.invalidatePostCaches(undefined, author.id).catch(() => null);
     return this.mapToResponse(saved as BlogPostWithAuthor);
   }
 
@@ -189,7 +193,7 @@ export class BlogService {
       })
       .catch((err) => console.error('[BlogService] notification failed:', err));
 
-    this.dashboardService.invalidatePostCaches(id).catch(() => null);
+    this.dashboardService.invalidatePostCaches(id, updated.authorId).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
   }
 
@@ -209,7 +213,7 @@ export class BlogService {
       })
       .catch((err) => console.error('[BlogService] notification failed:', err));
 
-    this.dashboardService.invalidatePostCaches(id).catch(() => null);
+    this.dashboardService.invalidatePostCaches(id, post.authorId).catch(() => null);
   }
 
   // ─── Admin moderation endpoints ───────────────────────────────────────────────
@@ -282,7 +286,7 @@ export class BlogService {
       },
     });
 
-    this.dashboardService.invalidatePostCaches(id).catch(() => null);
+    this.dashboardService.invalidatePostCaches(id, updated.authorId).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
   }
 
@@ -304,7 +308,7 @@ export class BlogService {
       },
     });
 
-    this.dashboardService.invalidatePostCaches(id).catch(() => null);
+    this.dashboardService.invalidatePostCaches(id, updated.authorId).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
   }
 

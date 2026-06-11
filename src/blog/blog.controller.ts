@@ -30,13 +30,14 @@ export class BlogController {
 
   @Get()
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'List all posts (all statuses)' })
+  @ApiOperation({ summary: 'List posts — super_admin sees all, staff sees own only' })
   findAll(
     @Query() pagination: PaginationDto,
+    @CurrentUser() user: User,
     @Query('status') status?: string,
     @Query('search') search?: string,
   ) {
-    return this.blogService.findAll(pagination, status, search);
+    return this.blogService.findAll(pagination, user, status, search);
   }
 
   @Public()
