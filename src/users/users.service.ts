@@ -206,6 +206,25 @@ export class UsersService {
     return { ...result, setupKey: rawSetupKey };
   }
 
+  async regenerateSetupKey(id: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const alreadySet = user.passwordSet || user.password !== null;
+    if (alreadySet) {
+      throw new BadRequestException('Cannot regenerate setup key — user has already set their password');
+    }
+
+    const rawSetupKey = randomUUID();
+    const setupKeyHash = createHash('sha256').update(rawSetupKey).digest('hex');
+
+    await this.prisma.user.update({ where: { id }, data: { setupKey: setupKeyHash } });
+
+    console.log(`[DEV] Regenerated setup key for ${user.email}: ${rawSetupKey}`);
+
+    return { setupKey: rawSetupKey };
+  }
+
   async resendInvite(id: string, frontendOrigin: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');

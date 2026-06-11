@@ -80,6 +80,13 @@ export class UsersController {
     return this.usersService.resendInvite(id, origin);
   }
 
+  @Post(':id/regenerate-setup-key')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Generate a new setup key for a user who has not set their password yet' })
+  regenerateSetupKey(@Param('id') id: string) {
+    return this.usersService.regenerateSetupKey(id);
+  }
+
   @Get(':id/posts')
   @ApiOperation({ summary: 'Get all blog posts authored by this user' })
   getUserPosts(@Param('id') id: string, @Query() pagination: PaginationDto) {
