@@ -19,6 +19,8 @@ export const CK = {
   PUBLIC: (gen: number, page: number, limit: number) => `blog:public:${gen}:${page}:${limit}`,
   BLOG_LIST: (gen: number, page: number, limit: number, status = '', search = '') =>
     `blog:list:${gen}:${page}:${limit}:${status}:${search}`,
+  ADMIN_BLOG_LIST: (gen: number, page: number, limit: number, modStatus = '') =>
+    `admin:blog:list:${gen}:${page}:${limit}:${modStatus}`,
 
   // ── Users ─────────────────────────────────────────────────────────
   USER_DETAIL: (id: string) => `users:detail:${id}`,

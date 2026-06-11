@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BlogPost, PostStatus, User } from '@prisma/client';
+import { BlogPost, ModerationStatus, PostStatus, User } from '@prisma/client';
 import { Cache } from 'cache-manager';
 import { CK, GEN, TTL } from '../cache/cache-keys';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -14,9 +14,11 @@ import { DashboardService } from '../dashboard/dashboard.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBlogPostDto } from './dto/create-blog-post.dto';
+import { RejectPostDto } from './dto/reject-post.dto';
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto';
 
-type BlogPostWithAuthor = BlogPost & { author: Omit<User, 'password'> };
+type SafeUser = Omit<User, 'password'>;
+type BlogPostWithAuthor = BlogPost & { author: SafeUser; reviewer?: SafeUser | null };
 
 @Injectable()
 export class BlogService {
@@ -26,6 +28,8 @@ export class BlogService {
     private readonly notificationsService: NotificationsService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
+
+  // ─── Authenticated staff/admin list ──────────────────────────────────────────
 
   async findAll(pagination: PaginationDto, status?: string, search?: string) {
     const { page, limit } = pagination;
@@ -61,25 +65,29 @@ export class BlogService {
     return result;
   }
 
+  // ─── Public list — approved posts only ───────────────────────────────────────
+
   async findPublic(page: number, limit: number) {
     const gen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
     const key = CK.PUBLIC(gen, page, limit);
     const cached = await this.cache.get<object>(key);
     if (cached) return cached;
 
+    const where = { status: 'published' as PostStatus, moderationStatus: 'approved' as ModerationStatus };
+
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
-        where: { status: 'published' },
+        where,
         include: { author: { omit: { password: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.blogPost.count({ where: { status: 'published' } }),
+      this.prisma.blogPost.count({ where }),
     ]);
 
     const result = {
-      data: data.map((p) => this.mapToResponse(p as BlogPostWithAuthor)),
+      data: data.map((p) => this.mapToPublicResponse(p as BlogPostWithAuthor)),
       total,
       page,
       limit,
@@ -89,6 +97,8 @@ export class BlogService {
     return result;
   }
 
+  // ─── Single post ──────────────────────────────────────────────────────────────
+
   async findOne(id: string) {
     const key = CK.POST(id);
     const cached = await this.cache.get<object>(key);
@@ -96,7 +106,10 @@ export class BlogService {
 
     const post = await this.prisma.blogPost.findUnique({
       where: { id },
-      include: { author: { omit: { password: true } } },
+      include: {
+        author: { omit: { password: true } },
+        reviewer: { omit: { password: true } },
+      },
     });
     if (!post) throw new NotFoundException('Blog post not found');
     const result = this.mapToResponse(post as BlogPostWithAuthor);
@@ -104,9 +117,15 @@ export class BlogService {
     return result;
   }
 
+  // ─── Create ───────────────────────────────────────────────────────────────────
+
   async create(dto: CreateBlogPostDto, author: User) {
     const saved = await this.prisma.blogPost.create({
-      data: { ...dto, authorId: author.id },
+      data: {
+        ...dto,
+        authorId: author.id,
+        moderationStatus: 'pending',
+      },
       include: { author: { omit: { password: true } } },
     });
 
@@ -134,6 +153,8 @@ export class BlogService {
     this.dashboardService.invalidatePostCaches().catch(() => null);
     return this.mapToResponse(saved as BlogPostWithAuthor);
   }
+
+  // ─── Update ───────────────────────────────────────────────────────────────────
 
   async update(id: string, dto: UpdateBlogPostDto, user: User) {
     const post = await this.prisma.blogPost.findUnique({ where: { id } });
@@ -172,6 +193,8 @@ export class BlogService {
     return this.mapToResponse(updated as BlogPostWithAuthor);
   }
 
+  // ─── Delete ───────────────────────────────────────────────────────────────────
+
   async remove(id: string, user: User) {
     const post = await this.prisma.blogPost.findUnique({ where: { id } });
     if (!post) throw new NotFoundException('Blog post not found');
@@ -189,8 +212,115 @@ export class BlogService {
     this.dashboardService.invalidatePostCaches(id).catch(() => null);
   }
 
+  // ─── Admin moderation endpoints ───────────────────────────────────────────────
+
+  async adminFindAll(pagination: PaginationDto, moderationStatus?: string) {
+    const { page, limit } = pagination;
+    const gen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
+    const key = CK.ADMIN_BLOG_LIST(gen, page, limit, moderationStatus);
+    const cached = await this.cache.get<object>(key);
+    if (cached) return cached;
+
+    const validModerationStatuses = ['pending', 'approved', 'rejected'];
+    const where: any = {};
+    if (moderationStatus && validModerationStatuses.includes(moderationStatus)) {
+      where.moderationStatus = moderationStatus as ModerationStatus;
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.blogPost.findMany({
+        where,
+        include: {
+          author: { omit: { password: true } },
+          reviewer: { omit: { password: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.blogPost.count({ where }),
+    ]);
+
+    const result = {
+      data: data.map((p) => this.mapToResponse(p as BlogPostWithAuthor)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+    await this.cache.set(key, result, TTL.LIST);
+    return result;
+  }
+
+  async adminFindOne(id: string) {
+    const post = await this.prisma.blogPost.findUnique({
+      where: { id },
+      include: {
+        author: { omit: { password: true } },
+        reviewer: { omit: { password: true } },
+      },
+    });
+    if (!post) throw new NotFoundException('Blog post not found');
+    return this.mapToResponse(post as BlogPostWithAuthor);
+  }
+
+  async approvePost(id: string, reviewer: User) {
+    const post = await this.prisma.blogPost.findUnique({ where: { id } });
+    if (!post) throw new NotFoundException('Blog post not found');
+
+    const updated = await this.prisma.blogPost.update({
+      where: { id },
+      data: {
+        moderationStatus: 'approved',
+        reviewedById: reviewer.id,
+        reviewedAt: new Date(),
+        rejectionReason: null,
+      },
+      include: {
+        author: { omit: { password: true } },
+        reviewer: { omit: { password: true } },
+      },
+    });
+
+    this.dashboardService.invalidatePostCaches(id).catch(() => null);
+    return this.mapToResponse(updated as BlogPostWithAuthor);
+  }
+
+  async rejectPost(id: string, reviewer: User, dto: RejectPostDto) {
+    const post = await this.prisma.blogPost.findUnique({ where: { id } });
+    if (!post) throw new NotFoundException('Blog post not found');
+
+    const updated = await this.prisma.blogPost.update({
+      where: { id },
+      data: {
+        moderationStatus: 'rejected',
+        reviewedById: reviewer.id,
+        reviewedAt: new Date(),
+        rejectionReason: dto.reason ?? null,
+      },
+      include: {
+        author: { omit: { password: true } },
+        reviewer: { omit: { password: true } },
+      },
+    });
+
+    this.dashboardService.invalidatePostCaches(id).catch(() => null);
+    return this.mapToResponse(updated as BlogPostWithAuthor);
+  }
+
+  // ─── Response mappers ─────────────────────────────────────────────────────────
+
   mapToResponse(post: BlogPostWithAuthor) {
-    const { metaTitle, metaDescription, ogImage, author, ...rest } = post;
-    return { ...rest, author, seo: { metaTitle, metaDescription, ogImage } };
+    const { metaTitle, metaDescription, ogImage, author, reviewer, ...rest } = post;
+    return { ...rest, author, reviewer: reviewer ?? null, seo: { metaTitle, metaDescription, ogImage } };
+  }
+
+  mapToPublicResponse(post: BlogPostWithAuthor) {
+    const {
+      metaTitle, metaDescription, ogImage,
+      moderationStatus, reviewedById, reviewedAt, rejectionReason, reviewer,
+      ...rest
+    } = post as any;
+    return { ...rest, seo: { metaTitle, metaDescription, ogImage } };
   }
 }

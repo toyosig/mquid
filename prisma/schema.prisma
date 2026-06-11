@@ -34,6 +34,12 @@ enum NotificationType {
   error
 }
 
+enum ModerationStatus {
+  pending
+  approved
+  rejected
+}
+
 model User {
   id                  String               @id @default(uuid())
   name                String
@@ -43,9 +49,12 @@ model User {
   avatar              String?
   active              Boolean              @default(true)
   lastLogin           DateTime?
+  setupKey            String?              @unique
+  passwordSet         Boolean              @default(false)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
-  blogPosts           BlogPost[]
+  blogPosts           BlogPost[]           @relation("PostAuthor")
+  reviewedPosts       BlogPost[]           @relation("PostReviewer")
   activityEvents      ActivityEvent[]
   notifications       Notification[]
   passwordResetTokens PasswordResetToken[]
@@ -55,25 +64,31 @@ model User {
 }
 
 model BlogPost {
-  id              String     @id @default(uuid())
-  title           String     @db.VarChar(200)
-  slug            String     @unique
-  content         String     @db.Text
-  status          PostStatus
-  category        String
-  tags            String[]
-  featuredImage   String?
-  metaTitle       String     @db.VarChar(60)
-  metaDescription String     @db.VarChar(160)
-  ogImage         String?
-  scheduledAt     DateTime?
-  author          User       @relation(fields: [authorId], references: [id])
-  authorId        String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id               String           @id @default(uuid())
+  title            String           @db.VarChar(200)
+  slug             String           @unique
+  content          String           @db.Text
+  status           PostStatus
+  category         String
+  tags             String[]
+  featuredImage    String?
+  metaTitle        String           @db.VarChar(60)
+  metaDescription  String           @db.VarChar(160)
+  ogImage          String?
+  scheduledAt      DateTime?
+  moderationStatus ModerationStatus @default(pending)
+  rejectionReason  String?          @db.Text
+  reviewedAt       DateTime?
+  author           User             @relation("PostAuthor", fields: [authorId], references: [id])
+  authorId         String
+  reviewer         User?            @relation("PostReviewer", fields: [reviewedById], references: [id])
+  reviewedById     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@index([authorId])
   @@index([status])
+  @@index([moderationStatus])
   @@index([createdAt])
   @@map("blog_posts")
 }

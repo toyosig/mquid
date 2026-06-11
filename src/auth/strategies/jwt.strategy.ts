@@ -19,7 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string; role: string }) {
+  async validate(payload: { sub: string; email: string; role: string; purpose?: string }) {
+    // Setup tokens are single-purpose — reject them from all protected routes
+    if (payload.purpose === 'password_setup') {
+      throw new UnauthorizedException('Setup token cannot be used for authentication');
+    }
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, role: true, active: true },

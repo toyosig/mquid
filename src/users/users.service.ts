@@ -174,8 +174,12 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already in use');
 
+    // Generate a setup key — stored as SHA-256 hash, raw value returned to caller once
+    const rawSetupKey = randomUUID();
+    const setupKeyHash = createHash('sha256').update(rawSetupKey).digest('hex');
+
     const user = await this.prisma.user.create({
-      data: { name: dto.name, email: dto.email, role: dto.role as UserRole, active: true },
+      data: { name: dto.name, email: dto.email, role: dto.role as UserRole, active: true, setupKey: setupKeyHash },
       omit: { password: true },
     });
 
@@ -190,13 +194,16 @@ export class UsersService {
       );
     }
 
+    console.log(`[DEV] Setup key for ${user.email}: ${rawSetupKey}`);
+
     const statsMap = await this.computeStats([user.id]);
     const result = this.attachStats(user, statsMap);
 
     const currentGen = (await this.cache.get<number>(GEN.USER)) ?? 0;
     await this.cache.set(GEN.USER, currentGen + 1, TTL.GEN);
 
-    return result;
+    // setupKey exposed only at creation time — never returned in subsequent lookups
+    return { ...result, setupKey: rawSetupKey };
   }
 
   async resendInvite(id: string, frontendOrigin: string) {
