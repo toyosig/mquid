@@ -1,9 +1,9 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { PaginationDto } from '../common/dto/pagination.dto';
 import { BlogService } from './blog.service';
+import { AdminBlogQueryDto } from './dto/admin-blog-query.dto';
 import { RejectPostDto } from './dto/reject-post.dto';
 
 @ApiTags('admin/posts')
@@ -15,9 +15,8 @@ export class AdminBlogController {
 
   @Get()
   @ApiOperation({ summary: 'List all posts (filterable by moderation status)' })
-  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'approved', 'rejected'] })
-  findAll(@Query() pagination: PaginationDto, @Query('status') status?: string) {
-    return this.blogService.adminFindAll(pagination, status);
+  findAll(@Query() query: AdminBlogQueryDto) {
+    return this.blogService.adminFindAll(query, query.status);
   }
 
   @Get(':id')

@@ -20,6 +20,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { User } from '@prisma/client';
 import { BlogService } from './blog.service';
+import { BlogListQueryDto } from './dto/blog-list-query.dto';
 import { CreateBlogPostDto } from './dto/create-blog-post.dto';
 import { UpdateBlogPostDto } from './dto/update-blog-post.dto';
 
@@ -31,13 +32,8 @@ export class BlogController {
   @Get()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List posts — super_admin sees all, staff sees own only' })
-  findAll(
-    @Query() pagination: PaginationDto,
-    @CurrentUser() user: User,
-    @Query('status') status?: string,
-    @Query('search') search?: string,
-  ) {
-    return this.blogService.findAll(pagination, user, status, search);
+  findAll(@Query() query: BlogListQueryDto, @CurrentUser() user: User) {
+    return this.blogService.findAll(query, user, query.status, query.search);
   }
 
   @Public()
