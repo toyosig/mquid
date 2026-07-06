@@ -33,7 +33,7 @@ export class BlogController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List posts — super_admin sees all, staff sees own only' })
   findAll(@Query() query: BlogListQueryDto, @CurrentUser() user: User) {
-    return this.blogService.findAll(query, user, query.status, query.search);
+    return this.blogService.findAll(query, user, query.status, query.search, query.category);
   }
 
   @Public()

@@ -31,13 +31,13 @@ export class BlogService {
 
   // ─── Authenticated staff/admin list ──────────────────────────────────────────
 
-  async findAll(pagination: PaginationDto, currentUser: User, status?: string, search?: string) {
+  async findAll(pagination: PaginationDto, currentUser: User, status?: string, search?: string, category?: string) {
     const { page, limit } = pagination;
     const gen = (await this.cache.get<number>(GEN.BLOG)) ?? 0;
 
     // Staff see only their own posts; admins see everything
     const scopedUserId = currentUser.role === 'staff' ? currentUser.id : '';
-    const key = CK.BLOG_LIST(gen, page, limit, status, search, scopedUserId);
+    const key = CK.BLOG_LIST(gen, page, limit, status, search, scopedUserId, category);
     const cached = await this.cache.get<object>(key);
     if (cached) return cached;
 
@@ -46,6 +46,7 @@ export class BlogService {
     if (currentUser.role === 'staff') where.authorId = currentUser.id;
     if (status && validStatuses.includes(status)) where.status = status as PostStatus;
     if (search) where.title = { contains: search, mode: 'insensitive' };
+    if (category) where.category = category;
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({

@@ -22,8 +22,8 @@ export const CK = {
   POST: (id: string) => `blog:post:${id}`,
   PUBLIC: (gen: number, page: number, limit: number) => `blog:public:${gen}:${page}:${limit}`,
   // userId = '' for super_admin (sees all), userId = user id for staff (sees own only)
-  BLOG_LIST: (gen: number, page: number, limit: number, status = '', search = '', userId = '') =>
-    `blog:list:${gen}:${page}:${limit}:${status}:${search}:${userId}`,
+  BLOG_LIST: (gen: number, page: number, limit: number, status = '', search = '', userId = '', category = '') =>
+    `blog:list:${gen}:${page}:${limit}:${status}:${search}:${userId}:${category}`,
   ADMIN_BLOG_LIST: (gen: number, page: number, limit: number, modStatus = '') =>
     `admin:blog:list:${gen}:${page}:${limit}:${modStatus}`,
 
