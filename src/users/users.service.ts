@@ -28,7 +28,7 @@ export class UsersService {
   // ─── Used by AuthModule / ProfileModule (never cached — auth needs live data) ──
 
   findByEmail(email: string) {
-    return this.prisma.user.findUnique({ where: { email }, omit: { password: true } });
+    return this.prisma.user.findUnique({ where: { email }, omit: { password: true, setupKey: true } });
   }
 
   findByEmailWithPassword(email: string) {
@@ -36,7 +36,7 @@ export class UsersService {
   }
 
   findById(id: string) {
-    return this.prisma.user.findUnique({ where: { id }, omit: { password: true } });
+    return this.prisma.user.findUnique({ where: { id }, omit: { password: true, setupKey: true } });
   }
 
   findByIdWithPassword(id: string) {
@@ -44,11 +44,11 @@ export class UsersService {
   }
 
   create(data: Omit<User, 'id' | 'createdAt' | 'updatedAt'>) {
-    return this.prisma.user.create({ data, omit: { password: true } });
+    return this.prisma.user.create({ data, omit: { password: true, setupKey: true } });
   }
 
   update(id: string, data: Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt'>>) {
-    return this.prisma.user.update({ where: { id }, data, omit: { password: true } });
+    return this.prisma.user.update({ where: { id }, data, omit: { password: true, setupKey: true } });
   }
 
   // ─── Cache helpers ────────────────────────────────────────────────
@@ -121,7 +121,7 @@ export class UsersService {
 
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
-        omit: { password: true },
+        omit: { password: true, setupKey: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -146,7 +146,7 @@ export class UsersService {
     const cached = await this.cache.get<object>(key);
     if (cached) return cached;
 
-    const user = await this.prisma.user.findUnique({ where: { id }, omit: { password: true } });
+    const user = await this.prisma.user.findUnique({ where: { id }, omit: { password: true, setupKey: true } });
     if (!user) throw new NotFoundException('User not found');
     const statsMap = await this.computeStats([id]);
     const result = this.attachStats(user, statsMap);
@@ -180,7 +180,7 @@ export class UsersService {
 
     const user = await this.prisma.user.create({
       data: { name: dto.name, email: dto.email, role: dto.role as UserRole, active: true, setupKey: setupKeyHash },
-      omit: { password: true },
+      omit: { password: true, setupKey: true },
     });
 
     const rawToken = await this.createInviteToken(user.id);
@@ -259,7 +259,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: { name: dto.name, email: dto.email, role: dto.role as UserRole },
-      omit: { password: true },
+      omit: { password: true, setupKey: true },
     });
     const statsMap = await this.computeStats([id]);
     const result = this.attachStats(updated, statsMap);
@@ -277,7 +277,7 @@ export class UsersService {
     const updated = await this.prisma.user.update({
       where: { id },
       data: { active },
-      omit: { password: true },
+      omit: { password: true, setupKey: true },
     });
     const statsMap = await this.computeStats([id]);
     const result = this.attachStats(updated, statsMap);
@@ -329,7 +329,7 @@ export class UsersService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
         where: { authorId: id },
-        include: { author: { omit: { password: true } } },
+        include: { author: { omit: { password: true, setupKey: true } } },
         orderBy: { updatedAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,

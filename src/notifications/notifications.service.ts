@@ -58,6 +58,28 @@ export class NotificationsService {
     return { updated: result.count };
   }
 
+  async createForUser(
+    userId: string,
+    payload: {
+      title: string;
+      message: string;
+      type: string;
+      postId?: string;
+    },
+  ): Promise<void> {
+    await this.prisma.notification.create({
+      data: {
+        userId,
+        title: payload.title,
+        message: payload.message,
+        type: payload.type as any,
+        postId: payload.postId ?? null,
+        read: false,
+      },
+    });
+    await this.invalidateUserNotifications(userId);
+  }
+
   async createForAllUsers(payload: {
     title: string;
     message: string;

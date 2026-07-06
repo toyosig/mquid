@@ -44,7 +44,7 @@ describe('NotificationsService', () => {
     it('returns paginated notifications for the correct user', async () => {
       mockPrisma.$transaction.mockResolvedValue([[mockNotif], 1]);
       const pagination: PaginationDto = { page: 1, limit: 10 };
-      const result = await service.findAll(mockUserId, pagination);
+      const result = await service.findAll(mockUserId, pagination) as any;
       expect(result.data).toEqual([mockNotif]);
       expect(result.total).toBe(1);
       expect(result.totalPages).toBe(1);

@@ -10,6 +10,8 @@ const mockUser = {
   avatar: null,
   active: true,
   lastLogin: null,
+  setupKey: null,
+  passwordSet: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -43,7 +45,7 @@ describe('UsersService', () => {
     const result = await service.findByEmail('a@b.com');
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
       where: { email: 'a@b.com' },
-      omit: { password: true },
+      omit: { password: true, setupKey: true },
     });
     expect(result).toEqual(mockUser);
   });
@@ -59,7 +61,7 @@ describe('UsersService', () => {
     const result = await service.findById('uuid-1');
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'uuid-1' },
-      omit: { password: true },
+      omit: { password: true, setupKey: true },
     });
     expect(result).toEqual(mockUser);
   });
@@ -74,11 +76,13 @@ describe('UsersService', () => {
       avatar: null,
       active: true,
       lastLogin: null,
+      setupKey: null,
+      passwordSet: false,
     });
     expect(result).toEqual(mockUser);
     expect(mockPrisma.user.create).toHaveBeenCalledWith({
-      data: { name: 'Test', email: 'a@b.com', password: 'hash', role: 'staff', avatar: null, active: true, lastLogin: null },
-      omit: { password: true },
+      data: { name: 'Test', email: 'a@b.com', password: 'hash', role: 'staff', avatar: null, active: true, lastLogin: null, setupKey: null, passwordSet: false },
+      omit: { password: true, setupKey: true },
     });
   });
 
@@ -107,7 +111,7 @@ describe('UsersService', () => {
     expect(mockPrisma.user.update).toHaveBeenCalledWith({
       where: { id: 'uuid-1' },
       data: { name: 'New' },
-      omit: { password: true },
+      omit: { password: true, setupKey: true },
     });
     expect(result?.name).toBe('New');
   });

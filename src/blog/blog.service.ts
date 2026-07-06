@@ -50,7 +50,7 @@ export class BlogService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
         where,
-        include: { author: { omit: { password: true } } },
+        include: { author: { omit: { password: true, setupKey: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -82,7 +82,7 @@ export class BlogService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.blogPost.findMany({
         where,
-        include: { author: { omit: { password: true } } },
+        include: { author: { omit: { password: true, setupKey: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -111,8 +111,8 @@ export class BlogService {
     const post = await this.prisma.blogPost.findUnique({
       where: { id },
       include: {
-        author: { omit: { password: true } },
-        reviewer: { omit: { password: true } },
+        author: { omit: { password: true, setupKey: true } },
+        reviewer: { omit: { password: true, setupKey: true } },
       },
     });
     if (!post) throw new NotFoundException('Blog post not found');
@@ -130,7 +130,7 @@ export class BlogService {
         authorId: author.id,
         moderationStatus: 'pending',
       },
-      include: { author: { omit: { password: true } } },
+      include: { author: { omit: { password: true, setupKey: true } } },
     });
 
     const activityType = saved.status === 'published' ? 'publish' : 'draft';
@@ -175,10 +175,16 @@ export class BlogService {
       if (conflict) throw new ConflictException('Slug already in use by another post');
     }
 
+    const wasApproved = post.moderationStatus === 'approved';
+    const updateData = {
+      ...dto,
+      ...(wasApproved && { moderationStatus: 'pending' as ModerationStatus }),
+    };
+
     const updated = await this.prisma.blogPost.update({
       where: { id },
-      data: dto,
-      include: { author: { omit: { password: true } } },
+      data: updateData,
+      include: { author: { omit: { password: true, setupKey: true } } },
     });
     await this.dashboardService.logActivity('edit', `Post updated: ${updated.title}`, user as any);
 
@@ -192,6 +198,17 @@ export class BlogService {
         type: justPublished ? 'success' : 'info',
       })
       .catch((err) => console.error('[BlogService] notification failed:', err));
+
+    if (wasApproved) {
+      this.notificationsService
+        .createForUser(updated.authorId, {
+          type: 'post_pending_review',
+          title: 'Your post is pending review',
+          message: `"${updated.title}" has been updated and is now pending review before going live again.`,
+          postId: id,
+        })
+        .catch((err) => console.error('[BlogService] notification failed:', err));
+    }
 
     this.dashboardService.invalidatePostCaches(id, updated.authorId).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
@@ -235,8 +252,8 @@ export class BlogService {
       this.prisma.blogPost.findMany({
         where,
         include: {
-          author: { omit: { password: true } },
-          reviewer: { omit: { password: true } },
+          author: { omit: { password: true, setupKey: true } },
+          reviewer: { omit: { password: true, setupKey: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -260,8 +277,8 @@ export class BlogService {
     const post = await this.prisma.blogPost.findUnique({
       where: { id },
       include: {
-        author: { omit: { password: true } },
-        reviewer: { omit: { password: true } },
+        author: { omit: { password: true, setupKey: true } },
+        reviewer: { omit: { password: true, setupKey: true } },
       },
     });
     if (!post) throw new NotFoundException('Blog post not found');
@@ -281,8 +298,8 @@ export class BlogService {
         rejectionReason: null,
       },
       include: {
-        author: { omit: { password: true } },
-        reviewer: { omit: { password: true } },
+        author: { omit: { password: true, setupKey: true } },
+        reviewer: { omit: { password: true, setupKey: true } },
       },
     });
 
@@ -303,10 +320,23 @@ export class BlogService {
         rejectionReason: dto.reason ?? null,
       },
       include: {
-        author: { omit: { password: true } },
-        reviewer: { omit: { password: true } },
+        author: { omit: { password: true, setupKey: true } },
+        reviewer: { omit: { password: true, setupKey: true } },
       },
     });
+
+    const revocationMessage = dto.reason
+      ? `"${updated.title}" has been revoked by an admin. Reason: ${dto.reason}. Please make the necessary corrections and resubmit.`
+      : `"${updated.title}" has been revoked by an admin. Please make the necessary corrections and resubmit.`;
+
+    this.notificationsService
+      .createForUser(updated.authorId, {
+        type: 'post_revoked',
+        title: 'Your post was taken offline',
+        message: revocationMessage,
+        postId: id,
+      })
+      .catch((err) => console.error('[BlogService] notification failed:', err));
 
     this.dashboardService.invalidatePostCaches(id, updated.authorId).catch(() => null);
     return this.mapToResponse(updated as BlogPostWithAuthor);
