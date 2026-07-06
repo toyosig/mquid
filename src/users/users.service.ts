@@ -300,9 +300,15 @@ export class UsersService {
     await this.invalidateUserCaches(id);
   }
 
-  async triggerPasswordReset(id: string, frontendOrigin: string) {
+  async triggerPasswordReset(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('User not found');
+
+    // Invalidate any existing unused tokens before issuing a new one
+    await this.prisma.passwordResetToken.updateMany({
+      where: { userId: id, used: false },
+      data: { used: true },
+    });
 
     const rawToken = randomUUID();
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -312,8 +318,8 @@ export class UsersService {
       data: { token: tokenHash, userId: id, expiresAt },
     });
 
-    console.log(`[DEV] Password reset link: ${frontendOrigin}/admin/reset-password?token=${rawToken}`);
-    return { message: 'Reset email sent' };
+    console.log(`[DEV] Reset token for ${user.email}: ${rawToken}`);
+    return { resetToken: rawToken };
   }
 
   async findUserPosts(id: string, pagination: PaginationDto) {

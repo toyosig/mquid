@@ -80,8 +80,12 @@ export class AuthService {
     console.log('[DEV] Password reset token:', rawToken);
   }
 
-  async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+  async resetPassword(dto: ResetPasswordDto): Promise<{ access_token: string; user: any }> {
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
+    const tokenHash = createHash('sha256').update(dto.resetToken).digest('hex');
     const record = await this.prisma.passwordResetToken.findUnique({
       where: { token: tokenHash },
       include: { user: true },
@@ -91,7 +95,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired reset token');
     }
 
-    const hashed = await bcrypt.hash(dto.newPassword, 10);
+    const hashed = await bcrypt.hash(dto.password, 10);
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: record.user.id },
@@ -99,6 +103,15 @@ export class AuthService {
       }),
       this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { used: true } }),
     ]);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: record.user.id },
+      omit: { password: true, setupKey: true },
+    });
+
+    const payload = { sub: user!.id, email: user!.email, role: user!.role };
+    const access_token = this.jwtService.sign(payload);
+    return { access_token, user };
   }
 
   async setPassword(dto: SetPasswordDto): Promise<{ access_token: string; user: any }> {

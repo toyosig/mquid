@@ -66,10 +66,9 @@ export class UsersController {
 
   @Post(':id/reset-password')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Trigger password reset email for user' })
+  @ApiOperation({ summary: 'Generate password reset token for user (admin shares out-of-band)' })
   resetPassword(@Param('id') id: string) {
-    const origin = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173';
-    return this.usersService.triggerPasswordReset(id, origin);
+    return this.usersService.triggerPasswordReset(id);
   }
 
   @Post(':id/resend-invite')
