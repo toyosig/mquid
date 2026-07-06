@@ -80,7 +80,11 @@ export class AuthService {
     console.log('[DEV] Password reset token:', rawToken);
   }
 
-  async resetPassword(dto: ResetPasswordDto): Promise<{ setup_token: string; requires_password_setup: true }> {
+  async resetPassword(dto: ResetPasswordDto): Promise<{ access_token: string; user: any }> {
+    if (dto.password !== dto.confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
     const tokenHash = createHash('sha256').update(dto.resetToken).digest('hex');
     const record = await this.prisma.passwordResetToken.findUnique({
       where: { token: tokenHash },
@@ -91,10 +95,23 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired reset token');
     }
 
-    const setupPayload = { sub: record.user.id, email: record.user.email, role: record.user.role, purpose: 'password_reset' };
-    const setup_token = this.jwtService.sign(setupPayload, { expiresIn: '15m' });
+    const hashed = await bcrypt.hash(dto.password, 10);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.user.id },
+        data: { password: hashed, passwordSet: true },
+      }),
+      this.prisma.passwordResetToken.update({ where: { id: record.id }, data: { used: true } }),
+    ]);
 
-    return { setup_token, requires_password_setup: true };
+    const user = await this.prisma.user.findUnique({
+      where: { id: record.user.id },
+      omit: { password: true, setupKey: true },
+    });
+
+    const payload = { sub: user!.id, email: user!.email, role: user!.role };
+    const access_token = this.jwtService.sign(payload);
+    return { access_token, user };
   }
 
   async setPassword(dto: SetPasswordDto): Promise<{ access_token: string; user: any }> {
@@ -147,50 +164,30 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired setup token');
     }
 
-    const isNewUserSetup = payload.purpose === 'password_setup';
-    const isPasswordReset = payload.purpose === 'password_reset';
-
-    if (!isNewUserSetup && !isPasswordReset) {
+    if (payload.purpose !== 'password_setup') {
       throw new UnauthorizedException('Invalid token type');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) throw new UnauthorizedException('User not found');
 
-    if (isNewUserSetup) {
-      const alreadySet = user.passwordSet || user.password !== null;
-      if (alreadySet) {
-        throw new BadRequestException('Password has already been set for this account. Use forgot password to reset it.');
-      }
+    const alreadySet = user.passwordSet || user.password !== null;
+    if (alreadySet) {
+      throw new BadRequestException('Password has already been set for this account. Use forgot password to reset it.');
     }
 
     const hashed = await bcrypt.hash(dto.password, 10);
 
-    if (isNewUserSetup) {
-      // First-time setup: clear setupKey and invalidate invite tokens
-      await this.prisma.$transaction([
-        this.prisma.user.update({
-          where: { id: user.id },
-          data: { password: hashed, passwordSet: true, setupKey: null },
-        }),
-        this.prisma.inviteToken.updateMany({
-          where: { userId: user.id, used: false },
-          data: { used: true },
-        }),
-      ]);
-    } else {
-      // Password reset: overwrite password and mark all pending reset tokens used
-      await this.prisma.$transaction([
-        this.prisma.user.update({
-          where: { id: user.id },
-          data: { password: hashed, passwordSet: true },
-        }),
-        this.prisma.passwordResetToken.updateMany({
-          where: { userId: user.id, used: false },
-          data: { used: true },
-        }),
-      ]);
-    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashed, passwordSet: true, setupKey: null },
+      }),
+      this.prisma.inviteToken.updateMany({
+        where: { userId: user.id, used: false },
+        data: { used: true },
+      }),
+    ]);
 
     const updatedUser = await this.prisma.user.findUnique({
       where: { id: user.id },

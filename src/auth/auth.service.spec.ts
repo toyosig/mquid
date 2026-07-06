@@ -185,32 +185,47 @@ describe('AuthService - resetPassword', () => {
     jest.clearAllMocks();
   });
 
+  it('throws BadRequestException when passwords do not match', async () => {
+    await expect(
+      service.resetPassword({ resetToken: 'tok', password: 'NewPass1!', confirmPassword: 'Different1!' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('throws UnauthorizedException when token not found', async () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue(null);
-    await expect(service.resetPassword({ resetToken: 'bad-token' })).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.resetPassword({ resetToken: 'bad-token', password: 'NewPass1!', confirmPassword: 'NewPass1!' }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('throws UnauthorizedException when token already used', async () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
       id: 'token-1', used: true, expiresAt: new Date(Date.now() + 3600000), user: { id: 'uuid-1', email: 'a@b.com', role: 'staff' },
     });
-    await expect(service.resetPassword({ resetToken: 'used-token' })).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.resetPassword({ resetToken: 'used-token', password: 'NewPass1!', confirmPassword: 'NewPass1!' }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('throws UnauthorizedException when token expired', async () => {
     mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
       id: 'token-1', used: false, expiresAt: new Date(Date.now() - 1000), user: { id: 'uuid-1', email: 'a@b.com', role: 'staff' },
     });
-    await expect(service.resetPassword({ resetToken: 'expired-token' })).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.resetPassword({ resetToken: 'expired-token', password: 'NewPass1!', confirmPassword: 'NewPass1!' }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
-  it('returns setup_token and requires_password_setup on valid token', async () => {
-    mockPrisma.passwordResetToken.findUnique.mockResolvedValue({
-      id: 'token-1', used: false, expiresAt: new Date(Date.now() + 3600000), user: { id: 'uuid-1', email: 'a@b.com', role: 'staff' },
-    });
-    jwtService.sign.mockReturnValue('setup-jwt');
-    const result = await service.resetPassword({ resetToken: 'valid-token' });
-    expect(result).toEqual({ setup_token: 'setup-jwt', requires_password_setup: true });
+  it('sets password, marks token used, and returns access_token + user', async () => {
+    const mockRecord = { id: 'token-1', used: false, expiresAt: new Date(Date.now() + 3600000), user: { id: 'uuid-1', email: 'a@b.com', role: 'staff' } };
+    const mockUser = { id: 'uuid-1', email: 'a@b.com', role: 'staff' };
+    mockPrisma.passwordResetToken.findUnique.mockResolvedValue(mockRecord);
+    (bcrypt.hash as jest.Mock).mockResolvedValue('$2b$10$newhash');
+    mockPrisma.$transaction.mockResolvedValue([{}, {}]);
+    mockPrisma.user.findUnique.mockResolvedValue(mockUser);
+    jwtService.sign.mockReturnValue('jwt-token');
+    const result = await service.resetPassword({ resetToken: 'valid-token', password: 'NewPass1!', confirmPassword: 'NewPass1!' });
+    expect(result).toEqual({ access_token: 'jwt-token', user: mockUser });
   });
 });
 
