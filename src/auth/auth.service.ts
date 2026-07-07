@@ -36,7 +36,13 @@ export class AuthService {
       !resetRecord.used &&
       resetRecord.expiresAt > new Date();
 
-    console.log('[Login] reset token check:', { found: !!resetRecord, valid: !!isValidResetToken });
+    console.log('[Login] reset token check:', {
+      found: !!resetRecord,
+      userMatch: resetRecord ? resetRecord.userId === user.id : null,
+      notUsed: resetRecord ? !resetRecord.used : null,
+      notExpired: resetRecord ? resetRecord.expiresAt > new Date() : null,
+      valid: !!isValidResetToken,
+    });
 
     if (isValidResetToken) {
       if (!user.active) throw new UnauthorizedException('Account is deactivated');
