@@ -102,8 +102,8 @@ export class DashboardService {
             INTERVAL '1 day'
           ) AS d
           LEFT JOIN blog_posts p
-            ON DATE(p.created_at) = d::date
-            AND p.author_id = ${requestUser.id}
+            ON DATE(p."createdAt") = d::date
+            AND p."authorId" = ${requestUser.id}
           GROUP BY d
           ORDER BY d ASC
         `,
@@ -127,7 +127,7 @@ export class DashboardService {
           NOW(),
           INTERVAL '1 day'
         ) AS d
-        LEFT JOIN blog_posts p ON DATE(p.created_at) = d::date
+        LEFT JOIN blog_posts p ON DATE(p."createdAt") = d::date
         GROUP BY d
         ORDER BY d ASC
       `,
