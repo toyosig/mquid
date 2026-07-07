@@ -27,10 +27,18 @@ export class AuthService {
     const submittedHash = createHash('sha256').update(dto.password).digest('hex');
 
     // ── Check if submitted credential is a valid admin-generated reset token ──
-    const resetRecord = await this.prisma.passwordResetToken.findFirst({
-      where: { userId: user.id, token: submittedHash, used: false, expiresAt: { gt: new Date() } },
+    const resetRecord = await this.prisma.passwordResetToken.findUnique({
+      where: { token: submittedHash },
     });
-    if (resetRecord) {
+    const isValidResetToken =
+      resetRecord &&
+      resetRecord.userId === user.id &&
+      !resetRecord.used &&
+      resetRecord.expiresAt > new Date();
+
+    console.log('[Login] reset token check:', { found: !!resetRecord, valid: !!isValidResetToken });
+
+    if (isValidResetToken) {
       if (!user.active) throw new UnauthorizedException('Account is deactivated');
       const setup_token = this.jwtService.sign(
         { sub: user.id, email: user.email, role: user.role, purpose: 'password_reset' },
